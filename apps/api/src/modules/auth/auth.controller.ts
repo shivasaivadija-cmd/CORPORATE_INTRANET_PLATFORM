@@ -55,7 +55,15 @@ export class AuthController {
   @Post('logout')
   @HttpCode(HttpStatus.OK)
   async logout(@CurrentUser('id') userId: string, @Res({ passthrough: true }) res: Response) {
-    await this.authService.logout(userId);
+    if (!userId) {
+      res.clearCookie('refresh_token');
+      return { data: { message: 'Logged out successfully' } };
+    }
+    try {
+      await this.authService.logout(userId);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
     res.clearCookie('refresh_token');
     return { data: { message: 'Logged out successfully' } };
   }

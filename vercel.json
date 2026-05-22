@@ -1,0 +1,12 @@
+{
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/(.*)", "destination": "/" }
+  ],
+  "env": {
+    "NEXT_PUBLIC_API_URL": "@next_public_api_url",
+    "NEXT_PUBLIC_WS_URL": "@next_public_ws_url"
+  },
+  "buildCommand": "npm run build",
+  "outputDirectory": "apps/web/.next"
+}

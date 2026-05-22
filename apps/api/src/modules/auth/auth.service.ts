@@ -46,31 +46,40 @@ export class AuthService {
   }
 
   async login(dto: LoginDto) {
-    // Find tenant by ID or slug if provided, otherwise find by email domain
-    let tenantId = dto.tenantId;
+    let user;
     
     if (dto.tenantId) {
-      // Check if it's a slug
+      // Find tenant by ID or slug
       const tenant = await this.prisma.tenant.findFirst({
         where: {
-          OR: [
-            { id: dto.tenantId },
-            { slug: dto.tenantId },
-          ],
+          OR: [{ id: dto.tenantId }, { slug: dto.tenantId }],
+          isActive: true,
         },
       });
-      if (tenant) {
-        tenantId = tenant.id;
+      if (!tenant) {
+        throw new BadRequestException('Tenant not found');
       }
+      
+      // Find user in specific tenant
+      user = await this.prisma.user.findFirst({
+        where: { 
+          email: dto.email, 
+          tenantId: tenant.id, 
+          status: 'ACTIVE' 
+        },
+        include: { department: true },
+      });
+    } else {
+      // No tenant specified - find user by email across all tenants
+      user = await this.prisma.user.findFirst({
+        where: { 
+          email: dto.email, 
+          status: 'ACTIVE' 
+        },
+        include: { department: true, tenant: true },
+      });
     }
     
-    // If no tenant specified, find user by email only
-    const user = await this.prisma.user.findFirst({
-      where: tenantId 
-        ? { email: dto.email, tenantId, status: 'ACTIVE' }
-        : { email: dto.email, status: 'ACTIVE' },
-      include: { department: true },
-    });
     if (!user) throw new UnauthorizedException('Invalid credentials');
 
     const valid = await bcrypt.compare(dto.password, user.password);
@@ -110,7 +119,12 @@ export class AuthService {
     return valid ? user : null;
   }
 
-  private async generateTokens(user: { id: string; tenantId: string; role: string; email: string }) {
+  private async generateTokens(user: {
+    id: string;
+    tenantId: string;
+    role: string;
+    email: string;
+  }) {
     const payload = { sub: user.id, tenantId: user.tenantId, role: user.role, email: user.email };
 
     const [accessToken, refreshToken] = await Promise.all([

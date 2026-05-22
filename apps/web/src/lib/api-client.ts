@@ -11,16 +11,17 @@ export const apiClient = axios.create({
   withCredentials: true,
   headers: { 
     'Content-Type': 'application/json',
-    'Accept-Encoding': 'gzip, deflate, br',
   },
   timeout: 5000, // 5 second timeout
-  decompress: true,
 });
 
 // Request interceptor - attach token and implement caching
 apiClient.interceptors.request.use((config) => {
   const token = useAuthStore.getState().accessToken;
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  
+  // Remove unsafe headers
+  delete config.headers['Accept-Encoding'];
   
   // Only cache GET requests
   if (config.method === 'get') {

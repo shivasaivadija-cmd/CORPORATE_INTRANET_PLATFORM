@@ -5,7 +5,7 @@ import { Award, Trophy, Send } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuthStore } from '@/store/auth';
+import { useAuthStore } from '@/store/auth.store';
 
 export default function RecognitionPage() {
   const [showGiveModal, setShowGiveModal] = useState(false);
