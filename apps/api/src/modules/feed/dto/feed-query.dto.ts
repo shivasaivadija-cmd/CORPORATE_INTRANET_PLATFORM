@@ -1,0 +1,25 @@
+import { IsOptional, IsEnum, IsUUID, IsInt, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class FeedQueryDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  limit?: number = 20;
+
+  @IsOptional()
+  @IsEnum(['TEXT', 'RICH', 'POLL', 'ANNOUNCEMENT', 'RECOGNITION', 'EVENT'])
+  type?: string;
+
+  @IsOptional()
+  @IsUUID()
+  departmentId?: string;
+}

@@ -1,0 +1,16 @@
+version: 2
+services:
+  api:
+    name: corporate-intranet-api
+    source: apps/api-python
+    build:
+      command: pip install -r requirements.txt
+    start:
+      command: uvicorn main:app --host 0.0.0.0 --port $PORT
+    env:
+      - DATABASE_URL=${{Postgres.DATABASE_URL}}
+      - REDIS_URL=${{Redis.REDIS_URL}}
+      - JWT_SECRET=${{JWT_SECRET}}
+      - REFRESH_TOKEN_SECRET=${{REFRESH_TOKEN_SECRET}}
+      - GEMINI_API_KEY=${{GEMINI_API_KEY}}
+      - NODE_ENV=production

@@ -1,0 +1,842 @@
+// ============================================================
+// CORPORATE INTRANET PLATFORM - PRISMA SCHEMA
+// Enterprise-grade multi-tenant database design
+// ============================================================
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearchPostgres"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// TENANT (Multi-tenancy root)
+// ============================================================
+
+model Tenant {
+  id           String     @id @default(uuid())
+  name         String
+  slug         String     @unique
+  domain       String?    @unique
+  logoUrl      String?
+  primaryColor String?    @default("#6366f1")
+  plan         TenantPlan @default(STARTER)
+
+  // Settings stored as JSON
+  settings Json @default("{\"allowGuestAccess\":false,\"enableAI\":true,\"enableRecognition\":true,\"enableEvents\":true,\"maxStorageGB\":50,\"maxUsers\":500,\"customBranding\":false,\"ssoEnabled\":false}")
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  users         User[]
+  departments   Department[]
+  posts         Post[]
+  announcements Announcement[]
+  articles      KnowledgeArticle[]
+  documents     Document[]
+  recognitions  Recognition[]
+  badges        Badge[]
+  events        Event[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+  featureFlags  FeatureFlag[]
+
+  @@index([slug])
+  @@index([domain])
+  @@map("tenants")
+}
+
+enum TenantPlan {
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+// ============================================================
+// USER
+// ============================================================
+
+model User {
+  id          String     @id @default(uuid())
+  tenantId    String
+  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email       String
+  password    String
+  firstName   String
+  lastName    String
+  displayName String
+  avatarUrl   String?
+  coverUrl    String?
+  role        UserRole   @default(EMPLOYEE)
+  status      UserStatus @default(ACTIVE)
+
+  // Profile
+  jobTitle  String?
+  bio       String?
+  location  String?
+  timezone  String?    @default("UTC")
+  skills    String[]   @default([])
+  socialLinks Json     @default("{}")
+
+  // Gamification
+  recognitionPoints Int @default(0)
+
+  // Auth
+  refreshTokenHash  String?
+  passwordResetToken String?
+  passwordResetExpiry DateTime?
+  emailVerifiedAt   DateTime?
+  lastLoginAt       DateTime?
+  lastSeenAt        DateTime?
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  managerId String?
+  manager   User?   @relation("UserManager", fields: [managerId], references: [id])
+  reports   User[]  @relation("UserManager")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  posts              Post[]
+  comments           Comment[]
+  reactions          Reaction[]
+  bookmarks          Bookmark[]
+  recognitionsGiven  Recognition[] @relation("RecognitionGiver")
+  recognitionsReceived Recognition[] @relation("RecognitionReceiver")
+  notifications      Notification[]
+  notificationPrefs  NotificationPreference?
+  eventRsvps         EventRsvp[]
+  pollVotes          PollVote[]
+  announcementReads  AnnouncementRead[]
+  uploadedDocuments  Document[]
+  articleAuthors     KnowledgeArticle[]
+  announcements      Announcement[]
+  organizedEvents    Event[]
+  auditLogs          AuditLog[]
+  userBadges         UserBadge[]
+  searchHistory      SearchHistory[]
+  aiDigests          AiDigest[]
+  departmentHead     Department[] @relation("DepartmentHead")
+  articleComments    ArticleComment[] @relation("ArticleCommentAuthor")
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+  @@index([departmentId])
+  @@index([role])
+  @@map("users")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  TENANT_ADMIN
+  DEPARTMENT_ADMIN
+  MODERATOR
+  EMPLOYEE
+  GUEST
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING
+}
+
+// ============================================================
+// DEPARTMENT
+// ============================================================
+
+model Department {
+  id          String  @id @default(uuid())
+  tenantId    String
+  tenant      Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  slug        String
+  description String?
+  iconUrl     String?
+  color       String?
+  parentId    String?
+  parent      Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id])
+  children    Department[] @relation("DepartmentHierarchy")
+  headId      String?
+  head        User?        @relation("DepartmentHead", fields: [headId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  members       User[]
+  posts         Post[]
+  announcements AnnouncementDepartment[]
+  articles      KnowledgeArticle[]
+  documents     Document[]
+  events        Event[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@map("departments")
+}
+
+// ============================================================
+// POSTS & FEED
+// ============================================================
+
+model Post {
+  id         String          @id @default(uuid())
+  tenantId   String
+  tenant     Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  authorId   String
+  author     User            @relation(fields: [authorId], references: [id])
+  type       PostType        @default(TEXT)
+  visibility PostVisibility  @default(PUBLIC)
+  content    String
+  richContent Json?
+  mediaUrls  String[]        @default([])
+  hashtags   String[]        @default([])
+  mentions   String[]        @default([])
+
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+
+  isPinned    Boolean @default(false)
+  isModerated Boolean @default(false)
+  isDeleted   Boolean @default(false)
+
+  // AI
+  aiSummary   String?
+  aiEmbedding Float[] @default([])
+  aiToxicityScore Float?
+
+  // Counters (denormalized for performance)
+  viewCount     Int @default(0)
+  commentCount  Int @default(0)
+  bookmarkCount Int @default(0)
+
+  scheduledAt DateTime?
+  expiresAt   DateTime?
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  comments  Comment[]
+  reactions Reaction[]
+  bookmarks Bookmark[]
+  poll      Poll?
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([tenantId, type])
+  @@index([tenantId, departmentId])
+  @@index([authorId])
+  @@index([hashtags])
+  @@map("posts")
+}
+
+enum PostType {
+  TEXT
+  RICH
+  POLL
+  ANNOUNCEMENT
+  RECOGNITION
+  EVENT
+  DOCUMENT
+}
+
+enum PostVisibility {
+  PUBLIC
+  DEPARTMENT
+  TEAM
+  PRIVATE
+}
+
+model Poll {
+  id          String   @id @default(uuid())
+  postId      String   @unique
+  post        Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  question    String
+  allowMultiple Boolean @default(false)
+  endsAt      DateTime
+  totalVotes  Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  options PollOption[]
+
+  @@map("polls")
+}
+
+model PollOption {
+  id        String @id @default(uuid())
+  pollId    String
+  poll      Poll   @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  text      String
+  voteCount Int    @default(0)
+
+  votes PollVote[]
+
+  @@map("poll_options")
+}
+
+model PollVote {
+  id           String     @id @default(uuid())
+  pollOptionId String
+  pollOption   PollOption @relation(fields: [pollOptionId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User       @relation(fields: [userId], references: [id])
+  createdAt    DateTime   @default(now())
+
+  @@unique([pollOptionId, userId])
+  @@map("poll_votes")
+}
+
+model Comment {
+  id       String  @id @default(uuid())
+  postId   String
+  post     Post    @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User    @relation(fields: [authorId], references: [id])
+  content  String
+  parentId String?
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  Comment[] @relation("CommentReplies")
+  isEdited  Boolean  @default(false)
+  isDeleted Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reactions Reaction[]
+
+  @@index([postId])
+  @@index([parentId])
+  @@map("comments")
+}
+
+model Reaction {
+  id        String       @id @default(uuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id])
+  type      ReactionType
+  postId    String?
+  post      Post?        @relation(fields: [postId], references: [id], onDelete: Cascade)
+  commentId String?
+  comment   Comment?     @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+
+  @@unique([userId, postId, type])
+  @@unique([userId, commentId, type])
+  @@index([postId])
+  @@map("reactions")
+}
+
+enum ReactionType {
+  LIKE
+  LOVE
+  CELEBRATE
+  INSIGHTFUL
+  CURIOUS
+}
+
+model Bookmark {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  postId    String
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, postId])
+  @@map("bookmarks")
+}
+
+// ============================================================
+// ANNOUNCEMENTS
+// ============================================================
+
+model Announcement {
+  id       String               @id @default(uuid())
+  tenantId String
+  tenant   Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  authorId String
+  author   User                 @relation(fields: [authorId], references: [id])
+  title    String
+  content  String
+  richContent Json?
+  priority AnnouncementPriority @default(MEDIUM)
+  audience AnnouncementAudience @default(ALL)
+  isPinned Boolean              @default(false)
+  requiresAck Boolean           @default(false)
+
+  // Counters
+  ackCount    Int @default(0)
+  readCount   Int @default(0)
+  totalTargeted Int @default(0)
+
+  // AI
+  aiSummary String?
+
+  scheduledAt DateTime?
+  expiresAt   DateTime?
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  departments AnnouncementDepartment[]
+  reads       AnnouncementRead[]
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([tenantId, isPinned])
+  @@map("announcements")
+}
+
+model AnnouncementDepartment {
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  departmentId   String
+  department     Department   @relation(fields: [departmentId], references: [id])
+
+  @@id([announcementId, departmentId])
+  @@map("announcement_departments")
+}
+
+model AnnouncementRead {
+  id             String       @id @default(uuid())
+  announcementId String
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  hasAcknowledged Boolean     @default(false)
+  readAt         DateTime     @default(now())
+  acknowledgedAt DateTime?
+
+  @@unique([announcementId, userId])
+  @@map("announcement_reads")
+}
+
+enum AnnouncementPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AnnouncementAudience {
+  ALL
+  DEPARTMENTS
+  SPECIFIC_USERS
+}
+
+// ============================================================
+// KNOWLEDGE HUB
+// ============================================================
+
+model KnowledgeCategory {
+  id          String  @id @default(uuid())
+  tenantId    String
+  name        String
+  slug        String
+  description String?
+  iconName    String?
+  color       String?
+  parentId    String?
+  parent      KnowledgeCategory?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    KnowledgeCategory[] @relation("CategoryHierarchy")
+  sortOrder   Int                 @default(0)
+  createdAt   DateTime            @default(now())
+
+  articles KnowledgeArticle[]
+
+  @@unique([tenantId, slug])
+  @@map("knowledge_categories")
+}
+
+model KnowledgeArticle {
+  id            String  @id @default(uuid())
+  tenantId      String
+  tenant        Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  authorId      String
+  author        User    @relation(fields: [authorId], references: [id])
+  title         String
+  slug          String
+  content       String
+  richContent   Json?
+  excerpt       String?
+  coverImageUrl String?
+  categoryId    String?
+  category      KnowledgeCategory? @relation(fields: [categoryId], references: [id])
+  tags          String[]           @default([])
+  departmentId  String?
+  department    Department?        @relation(fields: [departmentId], references: [id])
+  isPublished   Boolean            @default(false)
+  version       Int                @default(1)
+  viewCount     Int                @default(0)
+  likeCount     Int                @default(0)
+
+  // AI
+  aiSummary   String?
+  aiTags      String[]  @default([])
+  aiEmbedding Float[]   @default([])
+
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  versions  ArticleVersion[]
+  comments  ArticleComment[]
+
+  @@unique([tenantId, slug])
+  @@index([tenantId, isPublished])
+  @@index([categoryId])
+  @@index([departmentId])
+  @@map("knowledge_articles")
+}
+
+model ArticleVersion {
+  id        String           @id @default(uuid())
+  articleId String
+  article   KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  version   Int
+  content   String
+  richContent Json?
+  authorId  String
+  createdAt DateTime         @default(now())
+
+  @@index([articleId])
+  @@map("article_versions")
+}
+
+model ArticleComment {
+  id        String           @id @default(uuid())
+  articleId String
+  article   KnowledgeArticle @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User             @relation("ArticleCommentAuthor", fields: [authorId], references: [id])
+  content   String
+  parentId  String?
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([articleId])
+  @@map("article_comments")
+}
+
+// ============================================================
+// DOCUMENTS
+// ============================================================
+
+model Document {
+  id           String       @id @default(uuid())
+  tenantId     String
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  uploaderId   String
+  uploader     User         @relation(fields: [uploaderId], references: [id])
+  name         String
+  type         DocumentType @default(FILE)
+  mimeType     String?
+  size         BigInt?
+  storageKey   String?
+  url          String?
+  thumbnailUrl String?
+  parentId     String?
+  parent       Document?    @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children     Document[]   @relation("FolderHierarchy")
+  departmentId String?
+  department   Department?  @relation(fields: [departmentId], references: [id])
+  tags         String[]     @default([])
+  isPublic     Boolean      @default(false)
+  version      Int          @default(1)
+  downloadCount Int         @default(0)
+
+  // AI
+  aiSummary   String?
+  aiTags      String[]  @default([])
+  aiEmbedding Float[]   @default([])
+
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  versions DocumentVersion[]
+
+  @@index([tenantId])
+  @@index([parentId])
+  @@index([departmentId])
+  @@map("documents")
+}
+
+model DocumentVersion {
+  id         String   @id @default(uuid())
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  version    Int
+  storageKey String
+  size       BigInt
+  uploaderId String
+  createdAt  DateTime @default(now())
+
+  @@map("document_versions")
+}
+
+enum DocumentType {
+  FILE
+  FOLDER
+}
+
+// ============================================================
+// RECOGNITION & BADGES
+// ============================================================
+
+model Badge {
+  id          String        @id @default(uuid())
+  tenantId    String
+  tenant      Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  description String
+  iconUrl     String
+  color       String        @default("#6366f1")
+  points      Int           @default(10)
+  category    BadgeCategory @default(PERFORMANCE)
+  isActive    Boolean       @default(true)
+  createdAt   DateTime      @default(now())
+
+  recognitions Recognition[]
+  userBadges   UserBadge[]
+
+  @@map("badges")
+}
+
+model UserBadge {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  badgeId   String
+  badge     Badge    @relation(fields: [badgeId], references: [id])
+  awardedAt DateTime @default(now())
+
+  @@unique([userId, badgeId])
+  @@map("user_badges")
+}
+
+model Recognition {
+  id         String @id @default(uuid())
+  tenantId   String
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  giverId    String
+  giver      User   @relation("RecognitionGiver", fields: [giverId], references: [id])
+  receiverId String
+  receiver   User   @relation("RecognitionReceiver", fields: [receiverId], references: [id])
+  badgeId    String
+  badge      Badge  @relation(fields: [badgeId], references: [id])
+  message    String
+  points     Int    @default(10)
+  isPublic   Boolean @default(true)
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([receiverId])
+  @@map("recognitions")
+}
+
+enum BadgeCategory {
+  PERFORMANCE
+  COLLABORATION
+  INNOVATION
+  LEADERSHIP
+  CULTURE
+  MILESTONE
+}
+
+// ============================================================
+// EVENTS
+// ============================================================
+
+model Event {
+  id             String      @id @default(uuid())
+  tenantId       String
+  tenant         Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  organizerId    String
+  organizer      User        @relation(fields: [organizerId], references: [id])
+  title          String
+  description    String
+  coverImageUrl  String?
+  location       String?
+  isVirtual      Boolean     @default(false)
+  meetingUrl     String?
+  startAt        DateTime
+  endAt          DateTime
+  departmentId   String?
+  department     Department? @relation(fields: [departmentId], references: [id])
+  maxAttendees   Int?
+  rsvpCount      Int         @default(0)
+  tags           String[]    @default([])
+  status         EventStatus @default(DRAFT)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  rsvps EventRsvp[]
+
+  @@index([tenantId, startAt])
+  @@map("events")
+}
+
+model EventRsvp {
+  id        String    @id @default(uuid())
+  eventId   String
+  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id])
+  status    RsvpStatus @default(GOING)
+  createdAt DateTime  @default(now())
+
+  @@unique([eventId, userId])
+  @@map("event_rsvps")
+}
+
+enum EventStatus {
+  DRAFT
+  PUBLISHED
+  CANCELLED
+  COMPLETED
+}
+
+enum RsvpStatus {
+  GOING
+  MAYBE
+  NOT_GOING
+}
+
+// ============================================================
+// NOTIFICATIONS
+// ============================================================
+
+model Notification {
+  id         String           @id @default(uuid())
+  tenantId   String
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User             @relation(fields: [userId], references: [id])
+  type       NotificationType
+  title      String
+  body       String
+  data       Json?
+  isRead     Boolean          @default(false)
+  actorId    String?
+  entityId   String?
+  entityType String?
+  readAt     DateTime?
+  createdAt  DateTime         @default(now())
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("notifications")
+}
+
+model NotificationPreference {
+  id                String  @id @default(uuid())
+  userId            String  @unique
+  user              User    @relation(fields: [userId], references: [id])
+  emailEnabled      Boolean @default(true)
+  pushEnabled       Boolean @default(true)
+  inAppEnabled      Boolean @default(true)
+  digestEnabled     Boolean @default(true)
+  digestFrequency   String  @default("DAILY")
+  mutedTypes        String[] @default([])
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("notification_preferences")
+}
+
+enum NotificationType {
+  POST_REACTION
+  POST_COMMENT
+  COMMENT_REPLY
+  MENTION
+  RECOGNITION_RECEIVED
+  ANNOUNCEMENT
+  EVENT_INVITE
+  DOCUMENT_SHARED
+  SYSTEM
+  AI_DIGEST
+}
+
+// ============================================================
+// SEARCH
+// ============================================================
+
+model SearchHistory {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  query     String
+  resultCount Int    @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("search_history")
+}
+
+// ============================================================
+// AI
+// ============================================================
+
+model AiDigest {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  content   String
+  type      String   @default("DAILY")
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("ai_digests")
+}
+
+// ============================================================
+// AUDIT LOGS
+// ============================================================
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String
+  tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  action     String
+  entityType String
+  entityId   String?
+  oldValues  Json?
+  newValues  Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([userId])
+  @@map("audit_logs")
+}
+
+// ============================================================
+// FEATURE FLAGS
+// ============================================================
+
+model FeatureFlag {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  key       String
+  enabled   Boolean  @default(false)
+  config    Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, key])
+  @@map("feature_flags")
+}
