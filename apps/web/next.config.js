@@ -10,12 +10,12 @@ const nextConfig = {
     ],
   },
   experimental: {
-    optimizePackageImports: ['lucide-react', 'recharts'],
+    optimizePackageImports: ['lucide-react', 'recharts', 'framer-motion'],
   },
-  // Ensure proper hydration for Edge
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
   },
+  swcMinify: true,
 };
 
 module.exports = nextConfig;

@@ -25,10 +25,10 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <AnimatePresence mode="wait">
         {sidebarOpen && (
           <motion.aside
-            initial={{ x: -280, opacity: 0 }}
+            initial={false}
             animate={{ x: 0, opacity: 1 }}
             exit={{ x: -280, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 400, damping: 35 }}
+            transition={{ duration: 0.2, ease: 'easeOut' }}
             className="relative z-20 flex-shrink-0"
           >
             <Sidebar onClose={() => setSidebarOpen(false)} />
@@ -45,14 +45,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
           onCreatePost={() => setCreatePostOpen(true)}
         />
         <main className="scrollbar-thin flex-1 overflow-y-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, ease: 'easeOut' }}
-            className="h-full"
-          >
-            {children}
-          </motion.div>
+          {children}
         </main>
       </div>
 

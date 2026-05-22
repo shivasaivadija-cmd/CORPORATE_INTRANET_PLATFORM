@@ -13,7 +13,7 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
     'Accept-Encoding': 'gzip, deflate, br',
   },
-  timeout: 10000, // 10 second timeout
+  timeout: 5000, // 5 second timeout
   decompress: true,
 });
 
